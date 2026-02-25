@@ -9,6 +9,161 @@
     <title>CountBot</title>
   <script type="module" crossorigin src="/assets/js/index-Da1PjBYA.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/css/index-BZQAP3bk.css">
+  <script>
+/* ── CountBot 图片粘贴补丁 ── */
+(function () {
+  // 待发送的图片路径列表（发消息后自动清空）
+  var _pendingMedia = [];
+  // 零宽空格占位符：textarea 为空时注入，触发 Vue 响应式以激活发送按钮
+  var _PLACEHOLDER_CHAR = '\u200b';
+
+  /* ① 拦截 WebSocket.send，发「message」类型时注入 media 字段 */
+  var _OrigWS = window.WebSocket;
+  function PatchedWS() {
+    var ws = new (Function.prototype.bind.apply(_OrigWS, [null].concat(Array.from(arguments))))();
+    var _origSend = ws.send.bind(ws);
+    ws.send = function (data) {
+      try {
+        var msg = JSON.parse(data);
+        if (msg.type === 'message' && _pendingMedia.length > 0) {
+          msg.media = _pendingMedia.slice();
+          // 清除零宽空格占位符，若无实际文字则置空
+          if (msg.content === _PLACEHOLDER_CHAR) msg.content = '';
+          _pendingMedia = [];
+          _removePreview();
+          return _origSend(JSON.stringify(msg));
+        }
+      } catch (e) {}
+      return _origSend(data);
+    };
+    return ws;
+  }
+  PatchedWS.prototype = _OrigWS.prototype;
+  Object.setPrototypeOf(PatchedWS, _OrigWS);
+  window.WebSocket = PatchedWS;
+
+  /* ② 为 textarea.chat-input 绑定 paste 与 drop 事件 */
+  function _bindInput(el) {
+    if (el.__cbPatch) return;
+    el.__cbPatch = true;
+
+    el.addEventListener('paste', function (e) {
+      var items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          e.preventDefault();
+          _upload(items[i].getAsFile(), el);
+          break;
+        }
+      }
+    });
+  }
+
+  /* ③ 上传图片到后端 */
+  function _upload(file, el) {
+    _showLoading(el);
+    var fd = new FormData();
+    fd.append('file', file);
+    fetch('/api/chat/upload', { method: 'POST', body: fd })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.statusText); })
+      .then(function (data) {
+        _pendingMedia.push(data.path);
+        _showPreview(file, el);
+      })
+      .catch(function (err) {
+        console.error('[CountBot paste] upload failed:', err);
+        _showError(el);
+      });
+  }
+
+  /* ④ 预览 UI（插在 input-area 内、input-container 上方） */
+  var _PREVIEW_ID = '__cb_img_preview__';
+
+  function _container(el) {
+    return el.closest('.input-area') || el.parentElement;
+  }
+
+  function _removePreview() {
+    var el = document.getElementById(_PREVIEW_ID);
+    if (el) el.remove();
+  }
+
+  function _showLoading(el) {
+    _removePreview();
+    var div = document.createElement('div');
+    div.id = _PREVIEW_ID;
+    div.style.cssText = 'padding:6px 20px;font-size:13px;color:var(--text-secondary,#6b7280);';
+    div.textContent = '⏳ 图片上传中...';
+    var wrap = _container(el);
+    wrap.insertBefore(div, wrap.firstChild);
+  }
+
+  function _showError(el) {
+    var div = document.getElementById(_PREVIEW_ID);
+    if (div) { div.textContent = '❌ 上传失败，请重试'; setTimeout(_removePreview, 2000); }
+  }
+
+  function _enableSendBtn(el) {
+    if (el.value === '') {
+      // 修改 value 并触发 input 事件，使 Vue v-model 响应
+      var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      nativeSetter.call(el, _PLACEHOLDER_CHAR);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  function _disableSendBtnIfEmpty(el) {
+    if (el.value === _PLACEHOLDER_CHAR) {
+      var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      nativeSetter.call(el, '');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  function _showPreview(file, el) {
+    _removePreview();
+    var url = URL.createObjectURL(file);
+    var div = document.createElement('div');
+    div.id = _PREVIEW_ID;
+    div.style.cssText = [
+      'display:flex;align-items:center;gap:10px;',
+      'padding:8px 20px;',
+      'background:var(--bg-primary,#fff);',
+      'border-bottom:1px solid var(--border-color,#e5e7eb);',
+      'font-size:13px;color:var(--text-secondary,#6b7280);'
+    ].join('');
+    div.innerHTML = [
+      '<img src="' + url + '" style="height:44px;width:auto;border-radius:6px;object-fit:cover;flex-shrink:0;">',
+      '<span>图片已就绪，发消息时将一并提交</span>',
+      '<button id="__cb_rm_img__" style="margin-left:auto;background:none;border:none;',
+      'cursor:pointer;font-size:20px;line-height:1;color:#9ca3af;padding:0 4px;" title="移除图片">×</button>'
+    ].join('');
+    var wrap = _container(el);
+    wrap.insertBefore(div, wrap.firstChild);
+    // 激活发送按钮
+    _enableSendBtn(el);
+    document.getElementById('__cb_rm_img__').onclick = function () {
+      _pendingMedia = [];
+      _removePreview();
+      URL.revokeObjectURL(url);
+      // 恢复发送按钮状态
+      _disableSendBtnIfEmpty(el);
+    };
+  }
+
+  /* ⑤ MutationObserver：等 Vue 挂载后绑定输入框 */
+  var _obs = new MutationObserver(function () {
+    var el = document.querySelector('textarea.chat-input');
+    if (el) _bindInput(el);
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    _obs.observe(document.body, { childList: true, subtree: true });
+    var el = document.querySelector('textarea.chat-input');
+    if (el) _bindInput(el);
+  });
+})();
+  </script>
 </head>
 
 <body>

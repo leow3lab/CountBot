@@ -252,8 +252,14 @@ class ContextBuilder:
         if not images:
             return text
         
-        # 返回多模态内容
-        return images + [{"type": "text", "text": text}]
+        # 返回多模态内容（文字在前，图片在后；兼容 OpenAI 及大多数厂商格式）
+        # 仅在 text 非空时添加文本块，避免 API 拒绝空 text
+        clean_text = text.strip('\u200b').strip()  # 去掉零宽空格占位符
+        parts: list[dict[str, Any]] = []
+        if clean_text:
+            parts.append({"type": "text", "text": clean_text})
+        parts.extend(images)
+        return parts
 
     def add_tool_result(
         self,

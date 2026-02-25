@@ -87,11 +87,14 @@ async def handle_message_event(
 
         logger.info(f"会话验证通过: {session_id}")
 
-        # 保存用户消息到数据库
+        # 保存用户消息到数据库（纯图片时用占位提示）
+        save_content = content.strip('\u200b').strip() if content else ''
+        if not save_content and message.media:
+            save_content = '[图片]'
         user_message = await session_manager.add_message(
             session_id=session_id,
             role="user",
-            content=content,
+            content=save_content,
         )
 
         if user_message is None:
@@ -140,6 +143,7 @@ async def handle_message_event(
             message=content,
             session_id=session_id,
             context=context,
+            media=message.media,
             cancel_token=cancel_token,
         ):
             # 检查是否被取消

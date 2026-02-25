@@ -66,6 +66,7 @@ class ClientMessage(BaseModel):
     type: str = Field(..., description="消息类型")
     session_id: str = Field(..., alias="sessionId", description="会话 ID")
     content: str | None = Field(None, description="消息内容（ping 消息可选）")
+    media: list[str] | None = Field(None, description="图片路径列表（可选，粘贴/拖拽图片时携带）")
 
 
 class ServerMessage(BaseModel):

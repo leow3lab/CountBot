@@ -2,12 +2,14 @@
 
 import asyncio
 import json
+import shutil
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -1295,3 +1297,28 @@ async def summarize_session_to_memory(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to summarize session: {str(e)}"
         )
+
+
+@router.post("/upload")
+async def upload_attachment(file: UploadFile = File(...)) -> dict:
+    """上传图片附件，返回服务器本地路径，供发消息时通过 media 字段携带"""
+    content_type = file.content_type or ""
+    if not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only image files are supported",
+        )
+
+    config = config_loader.config
+    workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
+    upload_dir = workspace / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(file.filename or "image.png").suffix or ".png"
+    dest = upload_dir / f"{uuid.uuid4()}{ext}"
+
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    logger.info(f"Attachment uploaded: {dest} ({content_type})")
+    return {"path": str(dest)}

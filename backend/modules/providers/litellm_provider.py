@@ -7,6 +7,46 @@ from loguru import logger
 from .base import LLMProvider, StreamChunk, ToolCall
 
 
+def _has_image_content(messages: list[dict]) -> bool:
+    """检查消息列表中是否包含图片内容"""
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    return True
+    return False
+
+
+def _strip_image_content(messages: list[dict]) -> list[dict]:
+    """剥离消息列表中的图片内容，只保留文字部分"""
+    result = []
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            text_parts = [
+                p for p in content
+                if isinstance(p, dict) and p.get("type") == "text"
+            ]
+            if text_parts:
+                new_msg = dict(msg)
+                if len(text_parts) == 1:
+                    new_msg["content"] = text_parts[0]["text"]
+                else:
+                    new_msg["content"] = text_parts
+                result.append(new_msg)
+            elif msg.get("role") == "user":
+                # 纯图片消息：保留一条占位提示，避免上下文断裂
+                new_msg = dict(msg)
+                new_msg["content"] = "[用户发送了一张图片，但当前模型不支持图像识别]"
+                result.append(new_msg)
+            elif msg.get("role") in ("system", "assistant", "tool"):
+                result.append(msg)
+        else:
+            result.append(msg)
+    return result
+
+
 class LiteLLMProvider(LLMProvider):
     """LiteLLM Provider 实现"""
     
@@ -94,6 +134,7 @@ class LiteLLMProvider(LLMProvider):
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """流式聊天补全"""
+        request_params: dict[str, Any] | None = None
         try:
             import litellm
             
@@ -249,6 +290,33 @@ class LiteLLMProvider(LLMProvider):
         except Exception as e:
             error_msg = str(e)
             logger.error(f"LiteLLM call failed: {error_msg}")
+
+            # BadRequestError 且消息含图片：剥离图片后重试，避免因模型不支持视觉而直接失败
+            import litellm as _litellm
+            if isinstance(e, _litellm.BadRequestError) and request_params is not None and _has_image_content(messages):
+                logger.info("Detected BadRequestError with image content, retrying without images...")
+                text_only_messages = _strip_image_content(messages)
+                try:
+                    fallback_params = dict(request_params)
+                    fallback_params["messages"] = text_only_messages
+                    fallback_response = await _litellm.acompletion(**fallback_params)
+                    finish_reason_val = None
+                    async for chunk in fallback_response:
+                        if not chunk.choices:
+                            continue
+                        choice = chunk.choices[0]
+                        delta = choice.delta
+                        if hasattr(delta, "content") and delta.content:
+                            yield StreamChunk(content=delta.content)
+                        if choice.finish_reason:
+                            finish_reason_val = choice.finish_reason
+                    # 警告放在正文之后、finish_reason 之前
+                    yield StreamChunk(content="\n\n> ⚠️ 当前模型不支持图像识别，图片已被忽略。如需分析图片，请在设置中切换到支持视觉的模型（如 glm-4v-plus、gpt-4o 等）。")
+                    yield StreamChunk(finish_reason=finish_reason_val or "stop")
+                    return
+                except Exception as fallback_e:
+                    logger.error(f"Fallback also failed: {fallback_e}")
+
             friendly_msg = self._format_error_message(error_msg)
             yield StreamChunk(error=friendly_msg)
     
