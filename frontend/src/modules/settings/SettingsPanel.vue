@@ -110,6 +110,15 @@
           >
             <ChannelsConfig />
           </div>
+
+          <!-- EverMemOS Integration -->
+          <div
+            v-else-if="activeTab === 'evermemos'"
+            key="evermemos"
+            class="tab-pane"
+          >
+            <EverMemOSConfig />
+          </div>
         </transition>
       </div>
 
@@ -142,7 +151,8 @@ import {
   User as UserIcon,
   FolderOpen as FolderIcon,
   Shield as ShieldIcon,
-  MessageSquare as MessageIcon
+  MessageSquare as MessageIcon,
+  Brain as BrainIcon
 } from 'lucide-vue-next'
 import Button from '@/components/ui/Button.vue'
 import ProviderConfig from './ProviderConfig.vue'
@@ -152,6 +162,7 @@ import PersonalityEditor from './PersonalityEditor.vue'
 import WorkspaceConfig from './WorkspaceConfig.vue'
 import SecurityConfig from './SecurityConfig.vue'
 import ChannelsConfig from './ChannelsConfig.vue'
+import EverMemOSConfig from './EverMemOSConfig.vue'
 import { useSettingsStore } from '@/store/settings'
 import { useToast } from '@/composables/useToast'
 import type { SettingsTab } from '@/types/settings'
@@ -170,7 +181,8 @@ const tabs = [
   { id: 'persona' as SettingsTab, icon: UserIcon, label: 'settings.tabs.persona', shortLabel: 'settings.tabShort.persona' },
   { id: 'workspace' as SettingsTab, icon: FolderIcon, label: 'settings.tabs.workspace', shortLabel: 'settings.tabShort.workspace' },
   { id: 'security' as SettingsTab, icon: ShieldIcon, label: 'settings.tabs.security', shortLabel: 'settings.tabShort.security' },
-  { id: 'channels' as SettingsTab, icon: MessageIcon, label: 'settings.tabs.channels', shortLabel: 'settings.tabShort.channels' }
+  { id: 'channels' as SettingsTab, icon: MessageIcon, label: 'settings.tabs.channels', shortLabel: 'settings.tabShort.channels' },
+  { id: 'evermemos' as SettingsTab, icon: BrainIcon, label: 'settings.tabs.evermemos', shortLabel: 'settings.tabShort.evermemos' },
 ]
 
 const emit = defineEmits<{

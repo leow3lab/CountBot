@@ -29,7 +29,19 @@ export interface Settings {
     fontSize: 'small' | 'medium' | 'large'
 }
 
-export type SettingsTab = 'provider' | 'model' | 'persona' | 'workspace' | 'security' | 'channels'
+export type SettingsTab = 'provider' | 'model' | 'persona' | 'workspace' | 'security' | 'channels' | 'evermemos'
+
+export interface EverMemOSConfig {
+    enabled: boolean
+    api_base_url: string
+    user_id: string
+    group_id: string
+    auto_memorize: boolean
+    inject_memories: boolean
+    retrieval_limit: number
+    retrieval_mode: string
+    timeout: number
+}
 
 export interface HeartbeatConfig {
     enabled: boolean

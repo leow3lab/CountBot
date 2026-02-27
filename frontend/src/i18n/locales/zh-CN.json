@@ -318,7 +318,8 @@
             "workspace": "工作空间",
             "security": "安全设置",
             "system": "系统集成",
-            "channels": "渠道配置"
+            "channels": "渠道配置",
+            "evermemos": "记忆增强"
         },
         "tabShort": {
             "provider": "供应商",
@@ -326,7 +327,8 @@
             "persona": "用户",
             "workspace": "工作区",
             "security": "安全",
-            "channels": "渠道"
+            "channels": "渠道",
+            "evermemos": "记忆"
         },
         "saveSuccess": "设置保存成功",
         "saveError": "保存设置失败",
@@ -719,6 +721,50 @@
                 "userIdPlaceholder": "用户 ID",
                 "allowFromHint": "留空允许所有用户，或添加特定用户 ID",
                 "addUser": "添加用户"
+            }
+        },
+        "evermemos": {
+            "title": "EverMemOS 记忆增强",
+            "description": "将 EverMemOS 语义记忆系统集成到 CountBot，支持对话后自动存储和响应前语义检索历史记忆。",
+            "enable": "启用 EverMemOS 集成",
+            "enableHint": "启用后 CountBot 将调用 EverMemOS API 进行记忆的存储和检索",
+            "apiBaseUrl": "EverMemOS API 地址",
+            "apiBaseUrlPlaceholder": "例如：http://localhost:1995",
+            "userId": "用户 ID",
+            "userIdPlaceholder": "例如：countbot_user",
+            "userIdHint": "用于标识记忆归属的用户 ID，建议使用固定唯一标识",
+            "groupId": "群组/空间 ID",
+            "groupIdPlaceholder": "可选，留空表示个人空间",
+            "groupIdHint": "多用户或多渠道场景下可指定群组 ID 隔离记忆空间",
+            "autoMemorize": "自动写入记忆",
+            "autoMemorizeHint": "每次对话完成后，自动将用户消息和 AI 回复写入 EverMemOS",
+            "injectMemories": "自动注入记忆",
+            "injectMemoriesHint": "每次回复前，自动从 EverMemOS 检索相关语义记忆并注入到上下文",
+            "retrievalLimit": "注入记忆条数",
+            "retrievalLimitUnit": "条",
+            "retrievalLimitHint": "每次检索注入的最大记忆条数（1-20）",
+            "retrievalMode": "检索模式",
+            "retrievalModeHint": "选择从 EverMemOS 检索记忆的方式",
+            "modes": {
+                "agentic": "Agentic（LLM 智能多轮检索，效果最好）",
+                "hybrid": "混合检索（关键词 + 语义）",
+                "vector": "向量语义检索",
+                "keyword": "关键词检索（速度最快）"
+            },
+            "timeout": "请求超时",
+            "timeoutUnit": "秒",
+            "connected": "已连接",
+            "disconnected": "未连接",
+            "testSuccess": "EverMemOS 连接成功",
+            "testFailed": "EverMemOS 连接失败",
+            "memoryPreview": "近期记忆预览",
+            "noMemories": "暂无记忆数据",
+            "previewFailed": "获取记忆失败",
+            "memoryTypes": {
+                "episodic": "情节记忆",
+                "profile": "用户画像",
+                "foresight": "前瞻规划",
+                "unknown": "未知类型"
             }
         }
     },

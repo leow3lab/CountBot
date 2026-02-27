@@ -123,6 +123,7 @@ export interface UpdateSettingsRequest {
     workspace?: Partial<WorkspaceConfig>
     security?: Partial<SecurityConfig>
     persona?: Partial<PersonaConfig>
+    evermemos?: Partial<EverMemOSConfig>
 }
 
 export interface Settings {
@@ -131,6 +132,7 @@ export interface Settings {
     workspace: WorkspaceConfig
     security: SecurityConfig
     persona: PersonaConfig
+    evermemos?: EverMemOSConfig
 }
 
 export interface TestConnectionRequest {
@@ -599,4 +601,80 @@ export const stopAPI = {
 
     getActiveTasks: (): Promise<{ active_tasks: string[]; count: number }> =>
         queueAPI.getActiveTasks(),
+}
+
+// ============================================================================
+// EverMemOS API Types
+// ============================================================================
+
+export interface EverMemOSConfig {
+    enabled: boolean
+    api_base_url: string
+    user_id: string
+    group_id: string
+    auto_memorize: boolean
+    inject_memories: boolean
+    retrieval_limit: number
+    retrieval_mode: string
+    timeout: number
+}
+
+export interface UpdateEverMemOSConfigRequest {
+    enabled?: boolean
+    api_base_url?: string
+    user_id?: string
+    group_id?: string
+    auto_memorize?: boolean
+    inject_memories?: boolean
+    retrieval_limit?: number
+    retrieval_mode?: string
+    timeout?: number
+}
+
+export interface EverMemOSHealthResponse {
+    connected: boolean
+    message: string
+    api_base_url: string
+}
+
+export interface EverMemOSTestRequest {
+    api_base_url: string
+    timeout?: number
+}
+
+export interface EverMemOSTestResponse {
+    success: boolean
+    message: string
+}
+
+export interface EverMemOSMemoriesResponse {
+    success: boolean
+    memories: Record<string, any>[]
+    total: number
+    message?: string
+}
+
+/**
+ * EverMemOS API
+ */
+export const everMemosAPI = {
+    /** 获取健康状态 */
+    health: (): Promise<EverMemOSHealthResponse> =>
+        apiClient.get('/evermemos/health'),
+
+    /** 获取配置 */
+    getConfig: (): Promise<EverMemOSConfig> =>
+        apiClient.get('/evermemos/config'),
+
+    /** 保存配置 */
+    updateConfig: (data: UpdateEverMemOSConfigRequest): Promise<EverMemOSConfig> =>
+        apiClient.put('/evermemos/config', data),
+
+    /** 测试连接 */
+    testConnection: (data: EverMemOSTestRequest): Promise<EverMemOSTestResponse> =>
+        apiClient.post('/evermemos/test', data),
+
+    /** 预览记忆 */
+    getMemories: (params?: { query?: string; limit?: number }): Promise<EverMemOSMemoriesResponse> =>
+        apiClient.get('/evermemos/memories', { params }),
 }

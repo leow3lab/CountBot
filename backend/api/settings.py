@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.modules.config.loader import config_loader
-from backend.modules.config.schema import AppConfig, ModelConfig, ProviderConfig, WorkspaceConfig
+from backend.modules.config.schema import AppConfig, ModelConfig, ProviderConfig, WorkspaceConfig, EverMemOSConfig
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -168,6 +168,7 @@ class SettingsResponse(BaseModel):
     workspace: WorkspaceConfigResponse = Field(..., description="工作空间配置")
     security: SecurityConfigResponse = Field(..., description="安全配置")
     persona: PersonaConfigResponse = Field(..., description="用户信息和AI人设配置")
+    evermemos: dict | None = Field(None, description="EverMemOS 集成配置")
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -178,6 +179,7 @@ class UpdateSettingsRequest(BaseModel):
     workspace: dict | None = Field(None, description="工作空间配置")
     security: dict | None = Field(None, description="安全配置")
     persona: dict | None = Field(None, description="用户信息和AI人设配置")
+    evermemos: dict | None = Field(None, description="EverMemOS 集成配置")
 
 
 class TestConnectionRequest(BaseModel):
@@ -286,6 +288,7 @@ async def get_settings() -> SettingsResponse:
                     max_greets_per_day=config.persona.heartbeat.max_greets_per_day,
                 ),
             ),
+            evermemos=config.evermemos.model_dump() if config.evermemos else None,
         )
         
     except Exception as e:
@@ -413,6 +416,28 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                         config.persona.heartbeat.quiet_end = hb["quiet_end"]
                     if "max_greets_per_day" in hb:
                         config.persona.heartbeat.max_greets_per_day = hb["max_greets_per_day"]
+        
+        # EverMemOS 集成配置
+        if request.evermemos:
+            em = request.evermemos
+            if "enabled" in em:
+                config.evermemos.enabled = em["enabled"]
+            if "api_base_url" in em:
+                config.evermemos.api_base_url = em["api_base_url"]
+            if "user_id" in em:
+                config.evermemos.user_id = em["user_id"]
+            if "group_id" in em:
+                config.evermemos.group_id = em["group_id"]
+            if "auto_memorize" in em:
+                config.evermemos.auto_memorize = em["auto_memorize"]
+            if "inject_memories" in em:
+                config.evermemos.inject_memories = em["inject_memories"]
+            if "retrieval_limit" in em:
+                config.evermemos.retrieval_limit = em["retrieval_limit"]
+            if "retrieval_mode" in em:
+                config.evermemos.retrieval_mode = em["retrieval_mode"]
+            if "timeout" in em:
+                config.evermemos.timeout = em["timeout"]
         
         # 保存配置（await 确保写入完成）
         await config_loader.save_config(config)

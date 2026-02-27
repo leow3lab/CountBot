@@ -144,6 +144,19 @@ class ChannelsConfig(BaseModel):
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
 
 
+class EverMemOSConfig(BaseModel):
+    """EverMemOS 集成配置"""
+    enabled: bool = Field(default=False, description="是否启用 EverMemOS 记忆增强")
+    api_base_url: str = Field(default="http://localhost:1995", description="EverMemOS API 地址")
+    user_id: str = Field(default="countbot_user", description="默认用户 ID")
+    group_id: str = Field(default="", description="群组/空间 ID（可选）")
+    auto_memorize: bool = Field(default=True, description="对话结束后自动写入记忆")
+    inject_memories: bool = Field(default=True, description="响应前自动注入语义记忆")
+    retrieval_limit: int = Field(default=5, ge=1, le=20, description="每次注入的最大记忆条数")
+    retrieval_mode: str = Field(default="agentic", description="检索模式: agentic/hybrid/vector/keyword")
+    timeout: int = Field(default=10, ge=1, le=60, description="HTTP 请求超时（秒）")
+
+
 class AppConfig(BaseModel):
     """应用配置"""
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
@@ -152,6 +165,7 @@ class AppConfig(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     persona: PersonaConfig = Field(default_factory=PersonaConfig)
+    evermemos: EverMemOSConfig = Field(default_factory=EverMemOSConfig)
     theme: str = "auto"
     language: str = "auto"
     font_size: str = "medium"

@@ -123,6 +123,36 @@ async def handle_message_event(
 
         logger.info(f"开始AI处理，上下文消息数: {len(context)}")
 
+        # ── EverMemOS：检索相关记忆 ──────────────────────────────────────────
+        evermemos_memories: str | None = None
+        evermemos_client = None
+        evermemos_config = None
+        try:
+            from backend.modules.config.loader import config_loader
+            cfg = config_loader.config
+            if cfg.evermemos.enabled and cfg.evermemos.inject_memories:
+                from backend.modules.evermemos.client import EverMemOSClient
+                evermemos_client = EverMemOSClient(
+                    api_base_url=cfg.evermemos.api_base_url,
+                    timeout=cfg.evermemos.timeout,
+                )
+                evermemos_config = cfg.evermemos
+                memories = await evermemos_client.search(
+                    user_id=cfg.evermemos.user_id,
+                    query=content,
+                    group_id=cfg.evermemos.group_id or None,
+                    limit=cfg.evermemos.retrieval_limit,
+                    retrieve_method=cfg.evermemos.retrieval_mode,
+                )
+                if memories:
+                    evermemos_memories = evermemos_client.format_memories_for_context(memories)
+                    logger.info(f"[EverMemOS] 注入 {len(memories)} 条语义记忆")
+                else:
+                    logger.debug("[EverMemOS] 未检索到相关记忆")
+        except Exception as e:
+            logger.warning(f"[EverMemOS] 记忆检索失败（静默降级）: {e}")
+        # ────────────────────────────────────────────────────────────────────
+
         # 处理消息并流式输出
         assistant_content = ""
 
@@ -141,6 +171,7 @@ async def handle_message_event(
             session_id=session_id,
             context=context,
             cancel_token=cancel_token,
+            evermemos_memories=evermemos_memories,
         ):
             # 检查是否被取消
             if cancel_token.is_cancelled:
@@ -189,6 +220,41 @@ async def handle_message_event(
 
             # 发送完成通知
             await send_message_complete(session_id, "")
+
+            # ── EverMemOS：自动写入对话记忆（后台任务）─────────────────────
+            if evermemos_client and evermemos_config and evermemos_config.auto_memorize:
+                import asyncio as _asyncio
+
+                async def _auto_memorize():
+                    try:
+                        import uuid as _uuid
+                        from datetime import datetime as _dt, timezone as _tz
+                        base_time = _dt.now(_tz.utc).isoformat()
+                        user_id = evermemos_config.user_id
+                        group_id = evermemos_config.group_id or None
+
+                        await evermemos_client.memorize(
+                            user_id=user_id,
+                            role="user",
+                            content=content,
+                            group_id=group_id,
+                            message_id=f"user_{user_message.id}",
+                            create_time=base_time,
+                        )
+                        await evermemos_client.memorize(
+                            user_id=f"{user_id}_assistant",
+                            role="assistant",
+                            content=assistant_content,
+                            group_id=group_id,
+                            message_id=f"asst_{assistant_message.id}",
+                            create_time=base_time,
+                        )
+                        logger.info("[EverMemOS] 对话记忆写入成功")
+                    except Exception as exc:
+                        logger.warning(f"[EverMemOS] 自动写入记忆失败（静默）: {exc}")
+
+                _asyncio.create_task(_auto_memorize())
+            # ────────────────────────────────────────────────────────────────
         else:
             logger.warning(f"AI响应为空")
             # 没有内容，发送空完成通知

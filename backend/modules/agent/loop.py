@@ -57,6 +57,7 @@ class AgentLoop:
         chat_id: str | None = None,
         cancel_token=None,
         yield_intermediate: bool = True,
+        evermemos_memories: str | None = None,
     ) -> AsyncIterator[str]:
         """处理用户消息并生成流式响应
         
@@ -64,6 +65,7 @@ class AgentLoop:
             yield_intermediate: 是否输出中间迭代内容
                                True: Web UI 流式模式，实时输出
                                False: 频道模式，仅输出最终回复
+            evermemos_memories: EverMemOS 语义记忆（已格式化为文本，可选）
         """
         logger.info(f"Processing message for session {session_id}: {message[:50]}...")
         
@@ -83,6 +85,7 @@ class AgentLoop:
                 media=media,
                 channel=channel,
                 chat_id=chat_id,
+                evermemos_memories=evermemos_memories,
             )
         else:
             if context is None:

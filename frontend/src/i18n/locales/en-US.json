@@ -310,7 +310,8 @@
             "workspace": "Workspace",
             "security": "Security",
             "system": "System",
-            "channels": "Channels"
+            "channels": "Channels",
+            "evermemos": "Memory Boost"
         },
         "tabShort": {
             "provider": "Provider",
@@ -318,7 +319,8 @@
             "persona": "User",
             "workspace": "Space",
             "security": "Security",
-            "channels": "Channels"
+            "channels": "Channels",
+            "evermemos": "Memory"
         },
         "saveSuccess": "Settings saved successfully",
         "saveError": "Failed to save settings",
@@ -682,6 +684,50 @@
                 "testMessage": "This is a test notification from CountBot!",
                 "testSent": "Test notification sent",
                 "testError": "Failed to send test notification"
+            }
+        },
+        "evermemos": {
+            "title": "EverMemOS Memory Boost",
+            "description": "Integrate EverMemOS semantic memory into CountBot — automatically store conversations and retrieve relevant memories before each response.",
+            "enable": "Enable EverMemOS Integration",
+            "enableHint": "When enabled, CountBot will call the EverMemOS API to store and retrieve memories",
+            "apiBaseUrl": "EverMemOS API URL",
+            "apiBaseUrlPlaceholder": "e.g. http://localhost:1995",
+            "userId": "User ID",
+            "userIdPlaceholder": "e.g. countbot_user",
+            "userIdHint": "User ID used to identify memory ownership — use a fixed unique identifier",
+            "groupId": "Group / Space ID",
+            "groupIdPlaceholder": "Optional, leave empty for personal space",
+            "groupIdHint": "Specify a group ID to isolate memory spaces for multi-user or multi-channel scenarios",
+            "autoMemorize": "Auto Memorize Conversations",
+            "autoMemorizeHint": "After each conversation, automatically write the user message and AI reply into EverMemOS",
+            "injectMemories": "Auto Inject Memories",
+            "injectMemoriesHint": "Before each reply, automatically retrieve semantically relevant memories from EverMemOS and inject them into the context",
+            "retrievalLimit": "Memories to Inject",
+            "retrievalLimitUnit": "items",
+            "retrievalLimitHint": "Maximum number of memories injected per request (1–20)",
+            "retrievalMode": "Retrieval Mode",
+            "retrievalModeHint": "Choose how memories are retrieved from EverMemOS",
+            "modes": {
+                "agentic": "Agentic (LLM-guided multi-round, best quality)",
+                "hybrid": "Hybrid (keyword + semantic)",
+                "vector": "Vector semantic search",
+                "keyword": "Keyword search (fastest)"
+            },
+            "timeout": "Request Timeout",
+            "timeoutUnit": "seconds",
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "testSuccess": "EverMemOS connected successfully",
+            "testFailed": "Failed to connect to EverMemOS",
+            "memoryPreview": "Recent Memory Preview",
+            "noMemories": "No memory data available",
+            "previewFailed": "Failed to load memories",
+            "memoryTypes": {
+                "episodic": "Episodic",
+                "profile": "Profile",
+                "foresight": "Foresight",
+                "unknown": "Unknown"
             }
         }
     },

@@ -19,11 +19,15 @@ class ContextBuilder:
         memory=None,
         skills=None,
         persona_config=None,
+        evermemos_client=None,
+        evermemos_config=None,
     ):
         self.workspace = workspace
         self.memory = memory
         self.skills = skills
         self.persona_config = persona_config
+        self.evermemos_client = evermemos_client
+        self.evermemos_config = evermemos_config
         
         logger.debug(f"ContextBuilder initialized with workspace: {workspace}")
 
@@ -204,6 +208,7 @@ class ContextBuilder:
         media: list[str] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
+        evermemos_memories: str | None = None,
     ) -> list[dict[str, Any]]:
         """构建完整的消息列表用于 LLM 调用"""
         messages = []
@@ -215,6 +220,10 @@ class ContextBuilder:
         
         if channel and chat_id:
             system_prompt += f"\n\n## Current Session\nChannel: {channel}\nChat ID: {chat_id}"
+        
+        # 注入 EverMemOS 语义记忆（如果有）
+        if evermemos_memories:
+            system_prompt += f"\n\n{evermemos_memories}"
         
         messages.append({"role": "system", "content": system_prompt})
         messages.extend(history)
