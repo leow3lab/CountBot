@@ -122,6 +122,7 @@ class EverMemOSClient:
         group_id: Optional[str] = None,
         limit: int = 5,
         retrieve_method: str = "agentic",
+        memory_types: Optional[list[str]] = None,
     ) -> list[dict[str, Any]]:
         """语义检索 EverMemOS 记忆
 
@@ -141,7 +142,7 @@ class EverMemOSClient:
             "query": query,
             "top_k": limit,
             "retrieve_method": retrieve_method,
-            "memory_types": ["episodic_memory", "event_log"],
+            "memory_types": memory_types or ["episodic_memory", "event_log"],
             "include_metadata": True,
         }
         if group_id:
@@ -258,10 +259,14 @@ class EverMemOSClient:
             for item in memories:
                 if isinstance(item, dict):
                     # grouped item: {"group_id": [{...}, ...]}
+                    # 仅当字典整体像“分组容器”时才展开，避免把普通 memory（如 event_log）
+                    # 因包含 participants(list) 误判为 grouped，导致记录被丢弃。
                     grouped_lists = [v for v in item.values() if isinstance(v, list)]
-                    if grouped_lists and not any(
-                        key in item for key in ("content", "summary", "text", "episode")
-                    ):
+                    is_grouped_container = bool(grouped_lists) and all(
+                        isinstance(v, list) for v in item.values()
+                    )
+
+                    if is_grouped_container:
                         for group_items in grouped_lists:
                             for sub_item in group_items:
                                 append_item(sub_item)

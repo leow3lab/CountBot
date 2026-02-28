@@ -84,6 +84,23 @@ class MemoriesPreviewResponse(BaseModel):
     message: Optional[str] = None
 
 
+class MemoryTypeBucket(BaseModel):
+    """分类型记忆数据桶"""
+    key: str
+    supported: bool
+    count: int
+    items: List[dict[str, Any]]
+    message: Optional[str] = None
+
+
+class MemoryDashboardResponse(BaseModel):
+    """EverMemOS 记忆仪表盘响应"""
+    success: bool
+    summary: dict[str, int]
+    types: dict[str, MemoryTypeBucket]
+    message: Optional[str] = None
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -248,4 +265,100 @@ async def preview_memories(
             memories=[],
             total=0,
             message=f"获取记忆失败: {str(e)[:100]}",
+        )
+
+
+@router.get("/memory-dashboard", response_model=MemoryDashboardResponse)
+async def get_memory_dashboard(
+    query: Optional[str] = None,
+    limit: int = 12,
+) -> MemoryDashboardResponse:
+    """获取 EverMemOS 多类型记忆可视化数据（设置页仪表盘）"""
+    config = config_loader.config
+    cfg = config.evermemos
+
+    if not cfg.enabled:
+        return MemoryDashboardResponse(
+            success=False,
+            summary={},
+            types={},
+            message="EverMemOS 集成未启用",
+        )
+
+    type_plan: list[tuple[str, bool]] = [
+        ("episodic_memory", True),
+        ("foresight", True),
+        ("event_log", True),
+        ("profile", True),
+        ("memcell", False),
+        ("relationship", False),
+    ]
+
+    buckets: dict[str, MemoryTypeBucket] = {}
+    summary: dict[str, int] = {}
+
+    try:
+        from backend.modules.evermemos.client import EverMemOSClient
+
+        client = EverMemOSClient(
+            api_base_url=cfg.api_base_url,
+            timeout=cfg.timeout,
+        )
+
+        for memory_type, supported in type_plan:
+            if not supported:
+                buckets[memory_type] = MemoryTypeBucket(
+                    key=memory_type,
+                    supported=False,
+                    count=0,
+                    items=[],
+                    message="当前 EverMemOS API 暂不提供该类型的稳定查询能力",
+                )
+                summary[memory_type] = 0
+                continue
+
+            items: list[dict[str, Any]] = []
+            try:
+                if query and memory_type != "profile":
+                    items = await client.search(
+                        user_id=cfg.user_id,
+                        query=query,
+                        group_id=cfg.group_id or None,
+                        limit=limit,
+                        retrieve_method=cfg.retrieval_mode,
+                        memory_types=[memory_type],
+                    )
+                else:
+                    items = await client.get_memories(
+                        user_id=cfg.user_id,
+                        group_id=cfg.group_id or None,
+                        memory_type=memory_type,
+                        limit=limit,
+                    )
+            except Exception as type_err:
+                logger.warning(
+                    f"[EverMemOS] 获取 {memory_type} 记忆失败: {type_err}"
+                )
+                items = []
+
+            buckets[memory_type] = MemoryTypeBucket(
+                key=memory_type,
+                supported=True,
+                count=len(items),
+                items=items,
+            )
+            summary[memory_type] = len(items)
+
+        return MemoryDashboardResponse(
+            success=True,
+            summary=summary,
+            types=buckets,
+        )
+    except Exception as e:
+        logger.warning(f"[EverMemOS] 获取记忆仪表盘失败: {e}")
+        return MemoryDashboardResponse(
+            success=False,
+            summary={},
+            types={},
+            message=f"获取记忆仪表盘失败: {str(e)[:100]}",
         )

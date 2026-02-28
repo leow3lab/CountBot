@@ -190,15 +190,68 @@
             </Button>
           </div>
         </div>
+
+        <div v-if="memoryTypeCards.length" class="memory-type-cards">
+          <button
+            v-for="card in memoryTypeCards"
+            :key="card.key"
+            type="button"
+            class="memory-type-card"
+            :class="{ active: selectedMemoryType === card.key, unsupported: !card.supported }"
+            @click="selectedMemoryType = card.key"
+          >
+            <span class="card-title">{{ card.label }}</span>
+            <span class="card-count">{{ card.count }}</span>
+          </button>
+        </div>
+
         <div class="memory-preview-box">
           <div v-if="previewLoading" class="preview-loading">{{ $t('common.loading') }}</div>
           <div v-else-if="previewError" class="preview-error">{{ previewError }}</div>
+          <div v-else-if="!selectedBucket.supported" class="preview-empty">
+            {{ selectedBucket.message || $t('settings.evermemos.unsupportedType') }}
+          </div>
           <div v-else-if="previewMemories.length === 0" class="preview-empty">
             {{ $t('settings.evermemos.noMemories') }}
           </div>
+          <div v-else-if="selectedMemoryType === 'profile'" class="profile-list">
+            <div
+              v-for="(mem, idx) in timelineMemories"
+              :key="`pf-${idx}`"
+              class="profile-card"
+            >
+              <div class="profile-card-header">
+                <span class="profile-title">画像 {{ idx + 1 }}</span>
+                <span class="profile-time">{{ formatMemoryTime(mem) }}</span>
+              </div>
+              <div v-if="getProfileSummary(mem)" class="profile-summary">
+                {{ getProfileSummary(mem) }}
+              </div>
+              <div v-if="getProfileExplicitFacts(mem).length" class="profile-section">
+                <div class="profile-section-title">显式信息</div>
+                <ul class="profile-bullets">
+                  <li v-for="(fact, fIdx) in getProfileExplicitFacts(mem)" :key="`exp-${idx}-${fIdx}`">
+                    {{ fact }}
+                  </li>
+                </ul>
+              </div>
+              <div v-if="getProfileImplicitTraits(mem).length" class="profile-section">
+                <div class="profile-section-title">隐式特征</div>
+                <ul class="profile-bullets">
+                  <li v-for="(trait, tIdx) in getProfileImplicitTraits(mem)" :key="`imp-${idx}-${tIdx}`">
+                    {{ trait }}
+                  </li>
+                </ul>
+              </div>
+              <div class="mem-meta-row">
+                <span v-if="mem.memory_type" class="mem-type-badge">{{ getMemoryTypeLabel(mem.memory_type) }}</span>
+                <span v-if="getProfileGroupLabel(mem)" class="mem-group">group: {{ getProfileGroupLabel(mem) }}</span>
+              </div>
+            </div>
+          </div>
           <div v-else-if="previewViewMode === 'list'" class="preview-list">
             <div
-              v-for="(mem, idx) in previewMemories"
+              v-for="(mem, idx) in timelineMemories"
               :key="idx"
               class="preview-item"
             >
@@ -224,10 +277,22 @@
                 <div class="timeline-text">{{ getMemoryContent(mem) }}</div>
                 <div class="mem-meta-row">
                   <span v-if="mem.memory_type" class="mem-type-badge">{{ getMemoryTypeLabel(mem.memory_type) }}</span>
-                  <span v-if="mem.group_id" class="mem-group">group: {{ mem.group_id }}</span>
+                  <span v-if="getGroupLabel(mem)" class="mem-group">group: {{ getGroupLabel(mem) }}</span>
                 </div>
               </div>
             </div>
+          </div>
+
+          <div v-if="canLoadMore" class="preview-footer">
+            <Button
+              variant="secondary"
+              size="sm"
+              :loading="previewLoading"
+              :disabled="previewLoading"
+              @click="loadMoreMemories"
+            >
+              {{ $t('settings.evermemos.viewMore') }}
+            </Button>
           </div>
         </div>
       </div>
@@ -269,6 +334,11 @@ const previewLoading = ref(false)
 const previewError = ref('')
 const previewMemories = ref<any[]>([])
 const previewViewMode = ref<'list' | 'timeline'>('timeline')
+const selectedMemoryType = ref<string>('foresight')
+const memoryDashboard = ref<any>({ summary: {}, types: {} })
+const previewLimit = ref(50)
+const PREVIEW_STEP = 12
+const PREVIEW_MAX = 120
 
 // ── 初始化 ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
@@ -342,20 +412,88 @@ async function loadMemoryPreview() {
   previewLoading.value = true
   previewError.value = ''
   try {
-    const result = await everMemosAPI.getMemories({ limit: 8 })
+    const result = await everMemosAPI.getMemoryDashboard({ limit: previewLimit.value })
     if (result.success) {
-      previewMemories.value = result.memories || []
+      memoryDashboard.value = result
+
+      const preferred = selectedMemoryType.value
+      const availableTypes = Object.keys(result.types || {})
+      if (!availableTypes.includes(preferred)) {
+        selectedMemoryType.value = availableTypes[0] || 'episodic_memory'
+      }
+
+      previewMemories.value = (result.types?.[selectedMemoryType.value]?.items || [])
     } else {
       previewError.value = result.message || t('settings.evermemos.previewFailed')
+      previewMemories.value = []
     }
   } catch (e: any) {
     previewError.value = e.message || t('settings.evermemos.previewFailed')
+    previewMemories.value = []
   } finally {
     previewLoading.value = false
   }
 }
 
+watch(selectedMemoryType, async (newType) => {
+  previewMemories.value = memoryDashboard.value?.types?.[newType]?.items || []
+  await loadMemoryPreview()
+})
+
+async function loadMoreMemories() {
+  if (previewLoading.value || previewLimit.value >= PREVIEW_MAX) return
+  previewLimit.value = Math.min(previewLimit.value + PREVIEW_STEP, PREVIEW_MAX)
+  await loadMemoryPreview()
+}
+
+const memoryTypeCards = computed(() => {
+  const orderedKeys = [
+    'episodic_memory',
+    'foresight',
+    'event_log',
+    'profile',
+    'memcell',
+    'relationship',
+  ]
+  const types = memoryDashboard.value?.types || {}
+
+  return orderedKeys
+    .filter((key) => key in types)
+    .map((key) => {
+      const bucket = types[key] || {}
+      return {
+        key,
+        label: getMemoryTypeLabel(key),
+        count: Number(bucket.count || 0),
+        supported: Boolean(bucket.supported),
+      }
+    })
+})
+
+const selectedBucket = computed(() => {
+  return memoryDashboard.value?.types?.[selectedMemoryType.value] || {
+    supported: true,
+    count: 0,
+    items: [],
+    message: '',
+  }
+})
+
+const canLoadMore = computed(() => {
+  if (!selectedBucket.value?.supported) return false
+  if (previewLimit.value >= PREVIEW_MAX) return false
+  return previewMemories.value.length >= previewLimit.value
+})
+
 function getMemoryContent(mem: any): string {
+  const atomicFact = mem?.atomic_fact
+  if (Array.isArray(atomicFact) && atomicFact.length > 0) {
+    return atomicFact.filter(Boolean).join('；')
+  }
+  if (typeof atomicFact === 'string' && atomicFact.trim()) {
+    return atomicFact
+  }
+
   return (
     mem?.content ||
     mem?.summary ||
@@ -368,13 +506,84 @@ function getMemoryContent(mem: any): string {
 }
 
 function getMemoryTime(mem: any): string {
+  const profile = getProfileSource(mem)
+  const firstProfile = Array.isArray(mem?.profiles) ? mem.profiles[0] : null
+
   return (
+    profile?.last_updated ||
+    profile?.timestamp ||
+    profile?.updated_at ||
+    firstProfile?.updated_at ||
+    firstProfile?.created_at ||
     mem?.created_at ||
     mem?.timestamp ||
     mem?.start_time ||
     mem?.updated_at ||
     ''
   )
+}
+
+function normalizeProfileList(items: any): string[] {
+  if (!Array.isArray(items)) return []
+  return items
+    .map((item: any) => {
+      if (typeof item === 'string') return item
+      if (item == null || typeof item !== 'object') return ''
+
+      const key = item.key || item.field || item.name || item.trait || item.type || ''
+      const value = item.value || item.content || item.description || item.text || item.fact || ''
+      if (key && value) return `${key}: ${value}`
+      return value || key || ''
+    })
+    .filter(Boolean)
+}
+
+function getProfileSource(mem: any): any {
+  const firstProfile = Array.isArray(mem?.profiles) ? mem.profiles[0] : null
+  return (
+    mem?.profile_data ||
+    mem?.profile ||
+    firstProfile?.profile_data ||
+    firstProfile?.profile ||
+    mem?.global_profile?.profile_data ||
+    mem?.global_profile ||
+    mem ||
+    {}
+  )
+}
+
+function getProfileGroupLabel(mem: any): string {
+  const firstProfile = Array.isArray(mem?.profiles) ? mem.profiles[0] : null
+  const profileSource = getProfileSource(mem)
+  const groupId =
+    profileSource?.group_id ||
+    firstProfile?.group_id ||
+    mem?.group_id ||
+    ''
+
+  if (!groupId || groupId === '__all__') return ''
+  return groupId
+}
+
+function getGroupLabel(mem: any): string {
+  const groupId = mem?.group_id || ''
+  if (!groupId || groupId === '__all__') return ''
+  return groupId
+}
+
+function getProfileSummary(mem: any): string {
+  const source = getProfileSource(mem)
+  return source?.summary || source?.description || mem?.summary || ''
+}
+
+function getProfileExplicitFacts(mem: any): string[] {
+  const source = getProfileSource(mem)
+  return normalizeProfileList(source?.explicit_info).slice(0, 4)
+}
+
+function getProfileImplicitTraits(mem: any): string[] {
+  const source = getProfileSource(mem)
+  return normalizeProfileList(source?.implicit_traits).slice(0, 4)
 }
 
 function formatMemoryTime(mem: any): string {
@@ -617,6 +826,44 @@ function getMemoryTypeLabel(type: string): string {
   margin-bottom: 8px;
 }
 
+.memory-type-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.memory-type-card {
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.memory-type-card.active {
+  border-color: var(--primary-color, #6366f1);
+}
+
+.memory-type-card.unsupported {
+  opacity: 0.7;
+}
+
+.card-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.card-count {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 .preview-actions {
   display: flex;
   align-items: center;
@@ -766,5 +1013,67 @@ function getMemoryTypeLabel(type: string): string {
   color: var(--text-primary);
   line-height: 1.5;
   word-break: break-word;
+}
+
+.preview-footer {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+}
+
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--bg-secondary, var(--bg-primary));
+}
+
+.profile-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.profile-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.profile-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.profile-summary {
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+.profile-section {
+  margin-top: 8px;
+}
+
+.profile-section-title {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.profile-bullets {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

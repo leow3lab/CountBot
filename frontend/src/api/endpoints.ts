@@ -654,6 +654,21 @@ export interface EverMemOSMemoriesResponse {
     message?: string
 }
 
+export interface EverMemOSMemoryTypeBucket {
+    key: string
+    supported: boolean
+    count: number
+    items: Record<string, any>[]
+    message?: string
+}
+
+export interface EverMemOSMemoryDashboardResponse {
+    success: boolean
+    summary: Record<string, number>
+    types: Record<string, EverMemOSMemoryTypeBucket>
+    message?: string
+}
+
 /**
  * EverMemOS API
  */
@@ -677,4 +692,8 @@ export const everMemosAPI = {
     /** 预览记忆 */
     getMemories: (params?: { query?: string; limit?: number }): Promise<EverMemOSMemoriesResponse> =>
         apiClient.get('/evermemos/memories', { params }),
+
+    /** 记忆仪表盘（多类型聚合） */
+    getMemoryDashboard: (params?: { query?: string; limit?: number }): Promise<EverMemOSMemoryDashboardResponse> =>
+        apiClient.get('/evermemos/memory-dashboard', { params }),
 }
