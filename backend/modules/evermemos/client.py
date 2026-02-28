@@ -4,7 +4,7 @@
 - 写入对话记忆（POST /api/v1/memories）
 - 语义检索记忆（GET /api/v1/memories/search）
 - 获取记忆列表（GET /api/v1/memories）
-- 服务健康检查（GET /api/v1/health）
+- 服务健康检查（GET /health）
 
 容错设计：所有方法在 EverMemOS 不可用时静默降级，不影响主流程。
 """
@@ -42,8 +42,18 @@ class EverMemOSClient:
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.get(f"{self.api_base_url}/api/v1/health")
-                return resp.status_code < 500
+                resp = await client.get(f"{self.api_base_url}/health")
+                if resp.status_code != 200:
+                    return False
+                try:
+                    payload = resp.json()
+                    status_value = str(payload.get("status", "")).lower()
+                    if status_value and status_value not in {"healthy", "ok"}:
+                        return False
+                except Exception:
+                    # 健康接口仅以 200 为准，JSON 解析失败不视为可用
+                    return False
+                return True
         except Exception as e:
             logger.debug(f"[EverMemOS] 健康检查失败: {e}")
             return False
@@ -141,12 +151,7 @@ class EverMemOSClient:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.get(
                     f"{self.api_base_url}/api/v1/memories/search",
-                    params={
-                        "user_id": user_id,
-                        "query": query,
-                        "top_k": limit,
-                        "retrieve_method": retrieve_method,
-                    },
+                    params=params,
                 )
                 if resp.status_code == 200:
                     data = resp.json()
@@ -219,6 +224,8 @@ class EverMemOSClient:
         try:
             # 优先取 "result"，再取 "data"，最后回退到整个 data
             inner = data.get("result") or data.get("data") or data
+            memories: Any = []
+
             if isinstance(inner, dict):
                 memories = (
                     inner.get("memories")
@@ -226,13 +233,69 @@ class EverMemOSClient:
                     or inner.get("items")
                     or []
                 )
-                if isinstance(memories, list):
-                    return memories
-            if isinstance(inner, list):
-                return inner
+            elif isinstance(inner, list):
+                memories = inner
+
+            return self._flatten_memory_items(memories)
         except Exception:
             pass
         return []
+
+    def _flatten_memory_items(self, memories: Any) -> list[dict[str, Any]]:
+        """将 EverMemOS 返回的记忆结构扁平化为 list[dict]。
+
+        兼容两类结构：
+        1) 普通列表: [{...}, {...}]
+        2) 分组列表/字典: [{"group_id": [{...}, ...]}] 或 {"group_id": [{...}]}
+        """
+        flattened: list[dict[str, Any]] = []
+
+        def append_item(item: Any) -> None:
+            if isinstance(item, dict):
+                flattened.append(item)
+
+        if isinstance(memories, list):
+            for item in memories:
+                if isinstance(item, dict):
+                    # grouped item: {"group_id": [{...}, ...]}
+                    grouped_lists = [v for v in item.values() if isinstance(v, list)]
+                    if grouped_lists and not any(
+                        key in item for key in ("content", "summary", "text", "episode")
+                    ):
+                        for group_items in grouped_lists:
+                            for sub_item in group_items:
+                                append_item(sub_item)
+                    else:
+                        append_item(item)
+        elif isinstance(memories, dict):
+            # grouped dict: {"group_id": [{...}, ...]}
+            for value in memories.values():
+                if isinstance(value, list):
+                    for sub_item in value:
+                        append_item(sub_item)
+
+        # 去重（按 id 优先，其次按内容字段）
+        deduped: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for mem in flattened:
+            identifier = str(
+                mem.get("id")
+                or mem.get("memory_id")
+                or mem.get("episode_id")
+                or mem.get("event_id")
+                or (
+                    mem.get("content")
+                    or mem.get("summary")
+                    or mem.get("episode")
+                    or mem.get("text")
+                    or mem.get("subject")
+                )
+            )
+            if identifier and identifier not in seen:
+                seen.add(identifier)
+                deduped.append(mem)
+
+        return deduped
 
     def format_memories_for_context(
         self,
@@ -256,6 +319,9 @@ class EverMemOSClient:
             content = (
                 mem.get("content")
                 or mem.get("summary")
+                or mem.get("episode")
+                or mem.get("subject")
+                or mem.get("title")
                 or mem.get("text")
                 or str(mem)
             )

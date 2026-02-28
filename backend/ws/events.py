@@ -127,20 +127,30 @@ async def handle_message_event(
         evermemos_memories: str | None = None
         evermemos_client = None
         evermemos_config = None
+        evermemos_effective_group_id: str | None = None
         try:
             from backend.modules.config.loader import config_loader
             cfg = config_loader.config
             if cfg.evermemos.enabled and cfg.evermemos.inject_memories:
+                import hashlib as _hashlib
+
+                def _derive_single_user_group_id(sender_id: str) -> str:
+                    digest = _hashlib.md5(sender_id.encode("utf-8")).hexdigest()[:16]
+                    return f"{digest}_group"
+
                 from backend.modules.evermemos.client import EverMemOSClient
                 evermemos_client = EverMemOSClient(
                     api_base_url=cfg.evermemos.api_base_url,
                     timeout=cfg.evermemos.timeout,
                 )
                 evermemos_config = cfg.evermemos
+                evermemos_effective_group_id = (
+                    cfg.evermemos.group_id or _derive_single_user_group_id(cfg.evermemos.user_id)
+                )
                 memories = await evermemos_client.search(
                     user_id=cfg.evermemos.user_id,
                     query=content,
-                    group_id=cfg.evermemos.group_id or None,
+                    group_id=evermemos_effective_group_id,
                     limit=cfg.evermemos.retrieval_limit,
                     retrieve_method=cfg.evermemos.retrieval_mode,
                 )
@@ -227,13 +237,18 @@ async def handle_message_event(
 
                 async def _auto_memorize():
                     try:
-                        import uuid as _uuid
+                        import hashlib as _hashlib
                         from datetime import datetime as _dt, timezone as _tz
+
+                        def _derive_single_user_group_id(sender_id: str) -> str:
+                            digest = _hashlib.md5(sender_id.encode("utf-8")).hexdigest()[:16]
+                            return f"{digest}_group"
+
                         base_time = _dt.now(_tz.utc).isoformat()
                         user_id = evermemos_config.user_id
-                        group_id = evermemos_config.group_id or None
+                        group_id = evermemos_config.group_id or _derive_single_user_group_id(user_id)
 
-                        await evermemos_client.memorize(
+                        user_mem_result = await evermemos_client.memorize(
                             user_id=user_id,
                             role="user",
                             content=content,
@@ -241,15 +256,35 @@ async def handle_message_event(
                             message_id=f"user_{user_message.id}",
                             create_time=base_time,
                         )
-                        await evermemos_client.memorize(
-                            user_id=f"{user_id}_assistant",
+                        assistant_mem_result = await evermemos_client.memorize(
+                            user_id=user_id,
                             role="assistant",
                             content=assistant_content,
                             group_id=group_id,
                             message_id=f"asst_{assistant_message.id}",
                             create_time=base_time,
+                            sender_name="assistant",
                         )
-                        logger.info("[EverMemOS] 对话记忆写入成功")
+
+                        user_ok = bool(user_mem_result.get("success"))
+                        assistant_ok = bool(assistant_mem_result.get("success"))
+
+                        if user_ok and assistant_ok:
+                            logger.info("[EverMemOS] 对话记忆写入成功（user+assistant）")
+                        elif user_ok or assistant_ok:
+                            logger.warning(
+                                "[EverMemOS] 对话记忆部分写入成功: user_ok=%s, assistant_ok=%s, user_error=%s, assistant_error=%s",
+                                user_ok,
+                                assistant_ok,
+                                user_mem_result.get("error"),
+                                assistant_mem_result.get("error"),
+                            )
+                        else:
+                            logger.warning(
+                                "[EverMemOS] 对话记忆写入失败: user_error=%s, assistant_error=%s",
+                                user_mem_result.get("error"),
+                                assistant_mem_result.get("error"),
+                            )
                     except Exception as exc:
                         logger.warning(f"[EverMemOS] 自动写入记忆失败（静默）: {exc}")
 

@@ -162,15 +162,33 @@
       <div v-if="cfg.enabled" class="form-group">
         <div class="preview-header">
           <label class="label">{{ $t('settings.evermemos.memoryPreview') }}</label>
-          <Button
-            variant="secondary"
-            size="sm"
-            :loading="previewLoading"
-            :disabled="!cfg.enabled"
-            @click="loadMemoryPreview"
-          >
-            {{ $t('common.refresh') }}
-          </Button>
+          <div class="preview-actions">
+            <div class="view-mode-switch">
+              <button
+                class="view-mode-btn"
+                :class="{ active: previewViewMode === 'timeline' }"
+                @click="previewViewMode = 'timeline'"
+              >
+                时间轴
+              </button>
+              <button
+                class="view-mode-btn"
+                :class="{ active: previewViewMode === 'list' }"
+                @click="previewViewMode = 'list'"
+              >
+                列表
+              </button>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              :loading="previewLoading"
+              :disabled="!cfg.enabled"
+              @click="loadMemoryPreview"
+            >
+              {{ $t('common.refresh') }}
+            </Button>
+          </div>
         </div>
         <div class="memory-preview-box">
           <div v-if="previewLoading" class="preview-loading">{{ $t('common.loading') }}</div>
@@ -178,15 +196,37 @@
           <div v-else-if="previewMemories.length === 0" class="preview-empty">
             {{ $t('settings.evermemos.noMemories') }}
           </div>
-          <div v-else class="preview-list">
+          <div v-else-if="previewViewMode === 'list'" class="preview-list">
             <div
               v-for="(mem, idx) in previewMemories"
               :key="idx"
               class="preview-item"
             >
               <span class="mem-index">{{ idx + 1 }}.</span>
-              <span class="mem-content">{{ getMemoryContent(mem) }}</span>
-              <span v-if="mem.memory_type" class="mem-type-badge">{{ getMemoryTypeLabel(mem.memory_type) }}</span>
+              <div class="mem-main">
+                <span class="mem-content">{{ getMemoryContent(mem) }}</span>
+                <div class="mem-meta-row">
+                  <span v-if="mem.memory_type" class="mem-type-badge">{{ getMemoryTypeLabel(mem.memory_type) }}</span>
+                  <span class="mem-time">{{ formatMemoryTime(mem) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="timeline-list">
+            <div
+              v-for="(mem, idx) in timelineMemories"
+              :key="`tl-${idx}`"
+              class="timeline-item"
+            >
+              <div class="timeline-dot"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">{{ formatMemoryTime(mem) }}</div>
+                <div class="timeline-text">{{ getMemoryContent(mem) }}</div>
+                <div class="mem-meta-row">
+                  <span v-if="mem.memory_type" class="mem-type-badge">{{ getMemoryTypeLabel(mem.memory_type) }}</span>
+                  <span v-if="mem.group_id" class="mem-group">group: {{ mem.group_id }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -197,7 +237,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Input from '@/components/ui/Input.vue'
 import Button from '@/components/ui/Button.vue'
@@ -228,6 +268,7 @@ const healthStatus = ref<boolean | null>(null)
 const previewLoading = ref(false)
 const previewError = ref('')
 const previewMemories = ref<any[]>([])
+const previewViewMode = ref<'list' | 'timeline'>('timeline')
 
 // ── 初始化 ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
@@ -318,10 +359,39 @@ function getMemoryContent(mem: any): string {
   return (
     mem?.content ||
     mem?.summary ||
+    mem?.episode ||
+    mem?.subject ||
+    mem?.title ||
     mem?.text ||
     JSON.stringify(mem).slice(0, 120)
   )
 }
+
+function getMemoryTime(mem: any): string {
+  return (
+    mem?.created_at ||
+    mem?.timestamp ||
+    mem?.start_time ||
+    mem?.updated_at ||
+    ''
+  )
+}
+
+function formatMemoryTime(mem: any): string {
+  const raw = getMemoryTime(mem)
+  if (!raw) return '未知时间'
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return String(raw)
+  return d.toLocaleString()
+}
+
+const timelineMemories = computed(() => {
+  return [...previewMemories.value].sort((a, b) => {
+    const ta = new Date(getMemoryTime(a) || 0).getTime()
+    const tb = new Date(getMemoryTime(b) || 0).getTime()
+    return tb - ta
+  })
+})
 
 function getMemoryTypeLabel(type: string): string {
   const key = `settings.evermemos.memoryTypes.${type}`
@@ -547,6 +617,33 @@ function getMemoryTypeLabel(type: string): string {
   margin-bottom: 8px;
 }
 
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.view-mode-switch {
+  display: flex;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.view-mode-btn {
+  border: none;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.view-mode-btn.active {
+  background: var(--primary-color, #6366f1);
+  color: #fff;
+}
+
 .preview-header .label {
   margin-bottom: 0;
 }
@@ -588,6 +685,10 @@ function getMemoryTypeLabel(type: string): string {
   line-height: 1.5;
 }
 
+.mem-main {
+  flex: 1;
+}
+
 .mem-index {
   color: var(--text-tertiary);
   flex-shrink: 0;
@@ -600,6 +701,18 @@ function getMemoryTypeLabel(type: string): string {
   word-break: break-word;
 }
 
+.mem-meta-row {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mem-time {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
 .mem-type-badge {
   font-size: 10px;
   padding: 1px 6px;
@@ -608,5 +721,50 @@ function getMemoryTypeLabel(type: string): string {
   color: var(--primary-color, #6366f1);
   flex-shrink: 0;
   margin-top: 2px;
+}
+
+.mem-group {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.timeline-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--primary-color, #6366f1);
+  flex-shrink: 0;
+}
+
+.timeline-content {
+  flex: 1;
+  border-left: 1px solid var(--border-color);
+  padding-left: 10px;
+}
+
+.timeline-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.timeline-text {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
 }
 </style>
